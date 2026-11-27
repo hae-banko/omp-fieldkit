@@ -4,9 +4,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Container as TuiContainer } from "@oh-my-pi/pi-tui";
 import { z } from "zod";
-import type { ExtensionApi } from "../src/core/api.ts";
+import type { CustomOverlayComponent, CustomOverlayFactory, ExtensionApi } from "../src/core/api.ts";
 import extension from "../src/index.ts";
 
 export interface RegisteredCommand {
@@ -115,14 +114,11 @@ export function createTestContext(): TestContext {
   const tools: RegisteredTool[] = [];
   const renderers: Record<string, (message: unknown, options: unknown, theme: unknown) => unknown> = {};
 
-  const collectLines = (container: unknown): string[] => {
-    if (!(container instanceof TuiContainer)) return [];
-    return (container.children ?? []).map((c) => {
-      if (c && typeof c === "object" && "text" in c) {
-        return String(c.text ?? "");
-      }
-      return "";
-    });
+  const collectLines = (view: unknown): string[] => {
+    if (!view || typeof view !== "object" || !("render" in view) || typeof view.render !== "function") {
+      return [];
+    }
+    return view.render(120);
   };
 
   const assertNoDanglingTurnQueues = (): void => {
@@ -255,13 +251,10 @@ export function createTestContext(): TestContext {
 }
 
 export interface CustomUiCall {
-  component: {
-    render: (width: number) => readonly string[];
-    handleInput?: (data: string) => unknown;
-    dispose?: () => void;
-  };
+  component: CustomOverlayComponent;
   options?: Record<string, unknown>;
   renderedFrames: Record<number, readonly string[]>;
+  result?: unknown;
 }
 
 export interface InteractiveContextOptions {
@@ -282,7 +275,7 @@ export function createInteractiveCommandContext(
     select: (title: string, options: unknown[]) => Promise<string | undefined>;
     input: (prompt: string) => Promise<string | undefined>;
     custom: <T = unknown>(
-      factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => unknown,
+      factory: CustomOverlayFactory<T>,
       options?: Record<string, unknown>,
     ) => Promise<T>;
   };
@@ -325,33 +318,24 @@ export function createInteractiveCommandContext(
       return undefined;
     },
     custom: async <T = unknown>(
-      factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => unknown,
+      factory: CustomOverlayFactory<T>,
       options?: Record<string, unknown>,
     ): Promise<T> => {
       let resultVal: T = undefined as unknown as T;
       const done = (val: T): void => {
         resultVal = val;
       };
-      const comp = (await factory({}, {}, {}, done)) as {
-        render?: (width: number) => unknown;
-        handleInput?: (key: string) => unknown;
-        dispose?: () => void;
-      } | null | undefined;
-      if (!comp || typeof comp !== "object") {
-        fail(`ctx.ui.custom factory must return an object, got ${typeof comp}`);
-        return resultVal;
-      }
-      if (typeof comp.render !== "function") {
-        fail(`ctx.ui.custom component must have a render(width) function`);
-        return resultVal;
-      }
+      let columns = 80;
+      const uiHost = { size: () => ({ columns, rows: 30 }), requestRender() {} };
+      const comp = await factory(uiHost, {}, {}, done);
 
       const frames: Record<number, readonly string[]> = {};
       for (const width of [50, 80, 120]) {
+        columns = width;
         const lines = comp.render(width);
         if (!Array.isArray(lines)) {
           fail(
-            `ctx.ui.custom component.render(${width}) MUST return a string array (readonly string[]), got ${typeof lines} (constructor: ${(lines as unknown as Record<string, unknown>)?.constructor?.name ?? "unknown"}). Check if a Container was returned instead of container.render(width)!`,
+            `ctx.ui.custom view.render(${width}) must return an array of rows`,
           );
         } else {
           frames[width] = lines;
@@ -363,12 +347,13 @@ export function createInteractiveCommandContext(
         }
       }
       const call: CustomUiCall = {
-        component: comp as CustomUiCall["component"],
+        component: comp,
         options,
         renderedFrames: frames,
       };
       customCalls.push(call);
       opts.onCustom?.(call);
+      call.result = resultVal;
       return resultVal;
     },
   };

@@ -27,9 +27,9 @@
 //                                 handing it to `pi.sendUserMessage` (ADR-0008 §3)
 //   { action: "dismiss" }       — caller should close the overlay
 
-import { Container, Text } from "@oh-my-pi/pi-tui";
 import {
   BORDER_COLORS,
+  BOX_WIDTH,
   bold,
   boxLine,
   colorize,
@@ -92,8 +92,7 @@ export interface ResearchOverlayComponent {
   getState(): ResearchOverlayState;
   setActiveSlug(slug: string): void;
   invalidate(): void;
-  render(width: number, height: number): Container;
-  renderLines(width: number, height?: number): readonly string[];
+  render(width: number, height: number): string[];
   handleInput(key: string): ResearchOverlayAction | undefined;
 }
 
@@ -120,6 +119,7 @@ function projectDataPath(root: string, slug: string): string {
 // Header & footer rows reserved by every non-empty render frame.
 const HEADER_HEIGHT = 5; // top border + title + topic + tabs + bottom header border
 const FOOTER_HEIGHT = 3; // top footer border + help line + bottom footer border
+const LIST_CHROME_HEIGHT = 4; // top border, title, overflow hint, bottom border
 const DEFAULT_WIDTH = 80;
 const DEFAULT_HEIGHT = 24;
 
@@ -170,12 +170,6 @@ function nextTab(tab: ResearchOverlayTab, delta: number): ResearchOverlayTab {
   const idx = TABS.indexOf(tab);
   const next = (idx + delta + TABS.length) % TABS.length;
   return TABS[next] ?? "overview";
-}
-
-function rowsToContainer(lines: string[]): Container {
-  const container = new Container();
-  for (const line of lines) container.addChild(new Text(line, 0, 0));
-  return container;
 }
 
 export class ResearchOverlay implements ResearchOverlayComponent {
@@ -444,7 +438,7 @@ export class ResearchOverlay implements ResearchOverlayComponent {
     formatRow: (item: T, idx: number, isActive: boolean) => string,
     emptyMessage: string,
   ): string[] {
-    const usableHeight = Math.max(4, this.height - HEADER_HEIGHT - FOOTER_HEIGHT);
+    const usableHeight = this.visibleListRows();
     const lines: string[] = [makeTopBorder(borderColor)];
     lines.push(boxLine(`  ${title} (${items.length})`, borderColor));
 
@@ -568,19 +562,15 @@ export class ResearchOverlay implements ResearchOverlayComponent {
     }
   }
 
-  render(width: number, height: number): Container {
-    this.width = Math.max(40, width);
-    this.height = Math.max(12, height);
+  render(width: number, height: number): string[] {
+    this.width = Math.max(1, Math.min(BOX_WIDTH, width));
+    this.height = Math.max(0, height);
     const lines: string[] = [];
     if (this.state.projects.length > 0) lines.push(...this.headerLines());
     lines.push(...this.renderBody());
-    lines.push(...this.renderHelp());
-    if (lines.length > this.height) lines.length = this.height;
-    return rowsToContainer(lines);
-  }
-
-  renderLines(width: number, height?: number): readonly string[] {
-    return this.render(width, height ?? 24).render(width);
+    lines.length = Math.min(lines.length, Math.max(0, this.height - FOOTER_HEIGHT));
+    if (this.height > 0) lines.push(...this.renderHelp().slice(-this.height));
+    return width < BOX_WIDTH ? lines.map(line => truncateToWidth(line, width)) : lines;
   }
 
   private runCommandForActive(): string | undefined {
@@ -721,10 +711,14 @@ export class ResearchOverlay implements ResearchOverlayComponent {
     }
     const next = clampInt(this.state.selectedItemIndex + delta, 0, Math.max(0, max - 1));
     this.state.selectedItemIndex = next;
-    const visible = Math.max(4, this.height - HEADER_HEIGHT - FOOTER_HEIGHT);
+    const visible = Math.max(1, this.visibleListRows());
     const cur = clampInt(this.state.scrollOffsets[tab], 0, Math.max(0, max - 1));
     if (next < cur) this.state.scrollOffsets[tab] = next;
     else if (next >= cur + visible) this.state.scrollOffsets[tab] = next - visible + 1;
+  }
+
+  private visibleListRows(): number {
+    return Math.max(0, this.height - HEADER_HEIGHT - FOOTER_HEIGHT - LIST_CHROME_HEIGHT);
   }
 }
 

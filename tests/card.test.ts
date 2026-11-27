@@ -1,6 +1,5 @@
 // Unit tests for Unified Native TUI Card Engine (SPEC-003 / ADR-0007).
 
-import { Text } from "@oh-my-pi/pi-tui";
 import {
   createTuiCard,
   normalizeTheme,
@@ -9,6 +8,7 @@ import {
   type CardSpec,
   type ThemeHelper,
 } from "../src/core/card.ts";
+import { displayWidth } from "../src/research/research-format.ts";
 import { fail } from "./test-utils.ts";
 
 export function runCardTests(): void {
@@ -70,11 +70,11 @@ export function runCardTests(): void {
     isLight: false,
     fg(colorKey: string, text: string): string {
       fgCalls.push(colorKey);
-      return `<fg:${colorKey}>${text}</fg>`;
+      return `\x1b[32m${text}\x1b[39m`;
     },
     bg(colorKey: string, text: string): string {
       bgCalls.push(colorKey);
-      return `<bg:${colorKey}>${text}</bg>`;
+      return `\x1b[42m${text}\x1b[49m`;
     },
   };
 
@@ -93,7 +93,7 @@ export function runCardTests(): void {
       },
       {
         title: "CUSTOM COMPONENT SLOT",
-        content: new Text("Telemetry: [████░░░░] 50%", 0, 0),
+        content: { render: () => ["Telemetry: [████░░░░] 50%"] },
         divider: true,
       },
     ],
@@ -129,10 +129,14 @@ export function runCardTests(): void {
     fail(`createTuiCard failed to call theme.fg with "success", called: ${fgCalls.join(", ")}`);
   }
 
-  // Check full width viewport scaling (e.g. at 120 columns)
-  const rendered120 = card.render(120);
-  if (rendered120[0].length < 120) {
-    fail(`createTuiCard did not scale to 120 columns: ${rendered120[0].length}`);
+  for (const width of [0, 1, 4, 5, 20, 120]) {
+    const rows = card.render(width);
+    if (rows.some((row) => displayWidth(row) > width)) {
+      fail(`createTuiCard overflowed its ${width}-column viewport`);
+    }
+    if (width >= 5 && displayWidth(rows[0]) !== width) {
+      fail(`createTuiCard top border did not fill ${width} columns`);
+    }
   }
 
   console.log("Card engine tests complete.");

@@ -7,9 +7,8 @@ import { generateKeyPairSync, sign, verify, createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getWorkspaceContext } from "../core/workspace.ts";
-import { type Component } from "@oh-my-pi/pi-tui";
 import { createTuiCard, type CardSpec, type SemanticCardIntent } from "../core/card.ts";
-import type { CommandContext, ExtensionApi } from "../core/api.ts";
+import type { CommandContext, ExtensionApi, RowsView } from "../core/api.ts";
 import {
   BORDER_COLORS,
   bold,
@@ -1087,9 +1086,9 @@ export function councilVerdictToCardSpec(verdict: CouncilVerdict): CardSpec {
 }
 
 /**
- * Construct a native `@oh-my-pi/pi-tui` Box component representing a Council Verdict.
+ * Construct a width-aware rows view representing a Council Verdict.
  */
-export function createCouncilVerdictCard(verdict: CouncilVerdict, theme?: unknown): Component {
+export function createCouncilVerdictCard(verdict: CouncilVerdict, theme?: unknown): RowsView {
   const spec = councilVerdictToCardSpec(verdict);
   return createTuiCard(spec, theme);
 }
@@ -1097,7 +1096,7 @@ export function createCouncilVerdictCard(verdict: CouncilVerdict, theme?: unknow
 /**
  * Register the custom message renderer for `customType: "council-verdict"`.
  *
- * Returns a native `@oh-my-pi/pi-tui` Box component with theme-aware tinting and responsive width.
+ * Returns a rows view with theme-aware tinting and responsive width.
  */
 export function installCouncilVerdictRenderer(pi: ExtensionApi): void {
   pi.registerMessageRenderer(COUNCIL_CUSTOM_TYPE, (message: unknown, _options: unknown, theme: unknown) => {
@@ -1633,18 +1632,14 @@ async function launchCouncilOverlay(
   };
   const overlay: CouncilOverlayComponent = createCouncilOverlay(verdict);
   const result = await ctx.ui.custom<CouncilOverlayAction | undefined>(
-    (_tui, _theme, _keybindings, done) => ({
-      render: (width = 84, height = 26) => overlay.renderLines(width, height),
-      handleInput: (data: string) => {
-        const act = overlay.handleInput(data);
-        if (act) done(act);
-        return act;
+    (ui, _theme, _keybindings, done) => ({
+      render: width => overlay.render(width, ui.size().rows),
+      handleInput: data => {
+        const action = overlay.handleInput(data);
+        if (action) done(action);
       },
     }),
-    {
-      overlay: true,
-      overlayOptions: { width: "85%", maxHeight: "80%", anchor: "center" },
-    },
+    { overlay: true, fullscreen: true },
   );
   // Result handling is intentionally minimal: the overlay's primary purpose is
   // to let the user inspect the verdict. Dispatch is delegated to follow-up

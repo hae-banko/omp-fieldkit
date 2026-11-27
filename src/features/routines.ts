@@ -2,8 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import type { Container } from "@oh-my-pi/pi-tui";
-import type { ExtensionApi, ToolResult } from "../core/api.ts";
+import type { ExtensionApi, RowsView, ToolResult } from "../core/api.ts";
 import { toolResultCard } from "../research/research-format.ts";
 
 const UNDERSCORE_RE = /_/g;
@@ -79,7 +78,7 @@ export function findRoutinesRepoRoot(startDir: string = process.cwd()): string {
   }
 }
 
-export function renderRoutineResult(result: ToolResult): Container {
+export function renderRoutineResult(result: ToolResult): RowsView {
   const details = result.details as RoutineExecutionDetails | undefined;
   const name = details?.name ?? details?.routineId ?? "Routine";
   const code = details?.exitCode ?? (details?.success === false ? 1 : 0);

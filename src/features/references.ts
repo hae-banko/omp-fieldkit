@@ -16,9 +16,8 @@
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { CommandContext, ExtensionApi } from "../core/api.ts";
+import type { CommandContext, ExtensionApi, RowsView } from "../core/api.ts";
 import { listReferences, listUnmanagedReferences } from "../core/locators.ts";
-import type { Component } from "@oh-my-pi/pi-tui";
 import { createTuiCard, type CardSpec } from "../core/card.ts";
 
 const REFERENCES_LINE = ".omp/references/";
@@ -378,9 +377,9 @@ export async function runReferenceCommand(
 }
 
 /**
- * Construct a native `@oh-my-pi/pi-tui` Box card representing a Reference operation result.
+ * Construct the transcript card for a Reference operation result.
  */
-export function createReferenceCard(content: string, theme?: unknown): Component {
+export function createReferenceCard(content: string, theme?: unknown): RowsView {
   const lines = content.split("\n").filter((l) => l.trim().length > 0);
   const title = lines[0] || "REFERENCE CORPUS";
   const body = lines.slice(1);

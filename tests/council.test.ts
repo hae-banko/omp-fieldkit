@@ -164,14 +164,14 @@ export async function runCouncilSuite(ctx: TestContext): Promise<void> {
     }
   }
 
-  // Test native TUI Council Verdict Box rendering
-  const nativeBox = createCouncilVerdictCard(fullVerdict);
-  const boxLines = nativeBox.render(100);
+  // Test width-aware Council Verdict rows.
+  const verdictRows = createCouncilVerdictCard(fullVerdict);
+  const boxLines = verdictRows.render(100);
   if (!boxLines[0].includes("╭") || !boxLines[boxLines.length - 1].includes("╰")) {
     fail("createCouncilVerdictCard: rendered box missing native rounded corners");
   }
-  if (boxLines[0].length < 100) {
-    fail(`createCouncilVerdictCard: failed to scale to 100 columns: ${boxLines[0].length}`);
+  if (displayWidth(boxLines[0]) !== 100) {
+    fail(`createCouncilVerdictCard: failed to scale to 100 columns: ${displayWidth(boxLines[0])}`);
   }
   // Test persistence to .omp/scratch/debates/
   const testDir = createTempFixture("council-test");
@@ -209,64 +209,26 @@ export async function runCouncilSuite(ctx: TestContext): Promise<void> {
   }
 
   // 7d. installCouncilVerdictRenderer registers a renderer for council-verdict.
-  // Regression guard for v0.74.0 / session-resume crash:
-  //   "TypeError: t[i].render is not a function" in the harness render loop.
-  // The omp runtime iterates registered renderers and calls
-  // `t[i].render(width)` on each. Plain strings have no `.render`, so the
-  // renderer MUST return a pi-tui Component (a Container whose children are
-  // Text widgets) — never a raw newline-joined string. This test exercises
-  // the same loop pattern as the harness; if it throws here, it throws in
-  // production.
   const rendererCtx = createTestContextLike(ctx);
   installCouncilVerdictRenderer(rendererCtx.pi);
   const renderer = rendererCtx.renderers[COUNCIL_CUSTOM_TYPE];
   if (typeof renderer !== "function") {
     fail(`installCouncilVerdictRenderer: did not register a renderer for "${COUNCIL_CUSTOM_TYPE}"`);
   }
-  const verdictForRenderer: CouncilVerdict = fullVerdict;
-  const renderedByRenderer = renderer({ details: verdictForRenderer }, {}, {});
-  // (a) Must NOT be a string — that is the smoking gun of the v0.72.1 crash.
-  if (typeof renderedByRenderer === "string") {
-    fail(
-      "installCouncilVerdictRenderer: returned a raw string; the harness render loop " +
-        "calls t[i].render(width) on registered renderers and will throw " +
-        "'TypeError: t[i].render is not a function' when this verdict is re-rendered " +
-        "on session resume. Wrap each card line in a pi-tui Container of Text widgets.",
-    );
+  const renderedByRenderer = renderer({ details: fullVerdict }, {}, {});
+  let harnessRows: string[] = [];
+  if (
+    renderedByRenderer && typeof renderedByRenderer === "object" &&
+    "render" in renderedByRenderer && typeof renderedByRenderer.render === "function"
+  ) {
+    harnessRows = renderedByRenderer.render(80);
+  } else {
+    fail("installCouncilVerdictRenderer: expected a rows view");
   }
-  if (!renderedByRenderer || typeof renderedByRenderer !== "object") {
-    fail("installCouncilVerdictRenderer: returned a non-object value");
-  }
-  // (c) Drive the same loop the harness does: walk registered renderers and
-  //     call .render(width). If this throws, the user's session-resume crash
-  //     reproduces exactly. This is the Phase-1 red-capable loop.
-  const harnessRows: string[] = [];
-  for (const [, fn] of Object.entries(rendererCtx.renderers)) {
-    const out = fn({ details: verdictForRenderer }, {}, {});
-    if (out === undefined) continue; // renderer declined — fine
-    // Real harness code: `t[i].render(e)` where e is width. After the guard,
-    // `out` is a non-null object with a callable `render`. Pull it into a
-    // typed local so the call site is type-safe and the `null`/object shape
-    // doesn't escape.
-    if (typeof out !== "object" || out === null || !("render" in out) || typeof out.render !== "function") {
-      fail(
-        "harness-loop exercise: a registered renderer returned a non-Component " +
-          "value — this is the exact pattern that crashes the runtime with " +
-          "'TypeError: t[i].render is not a function'.",
-      );
-    }
-    // Boundary cast: the guard above proves the shape (non-null object with a
-    // callable `render`), but TS won't infer through `in` to the function type
-    // here. The assertion is load-bearing only after the guard succeeds.
-    const component = out as unknown as { render: (width: number) => readonly string[] };
-    const rendered = component.render(80);
-    for (const row of rendered) harnessRows.push(row);
-  }
-  // (d) The verdict text must be present in the rendered lines.
   if (!harnessRows.some((r) => r.includes("COUNCIL VERDICT"))) {
     fail("installCouncilVerdictRenderer: rendered output missing 'COUNCIL VERDICT' header");
   }
-  // (e) Every rendered line must respect the responsive width invariant.
+  // Rendered rows must fit the requested width.
   for (const row of harnessRows) {
     if (displayWidth(row) > 80) {
       fail(`installCouncilVerdictRenderer: row exceeds responsive width (80): ${row}`);
@@ -736,8 +698,7 @@ export async function runCouncilSuite(ctx: TestContext): Promise<void> {
   const overlayState = overlay.getState();
   if (overlayState.activeTab !== "verdict") fail("overlay default tab should be verdict");
 
-  const container = overlay.render(100, 30);
-  const overlayLines = ctx.collectLines(container);
+  const overlayLines = overlay.render(100, 30);
   if (overlayLines.length === 0) fail("overlay render produced no lines");
   if (!overlayLines.some((l) => l.includes("COUNCIL VERDICT") || l.includes("Council Verdict Overlay"))) {
     fail("overlay render missing title");
@@ -759,7 +720,10 @@ export async function runCouncilSuite(ctx: TestContext): Promise<void> {
   const dismiss = overlay.handleInput("q");
   if (!dismiss || dismiss.action !== "dismiss") fail("overlay 'q' dismiss");
   // Re-render after dismiss to ensure no crash
-  overlay.render(80, 24);
+  const compactOverlayLines = overlay.render(40, 12);
+  if (compactOverlayLines.length > 12 || compactOverlayLines.some(row => displayWidth(row) > 40)) {
+    fail("CouncilOverlay.render(40, 12) exceeded the resized viewport");
+  }
 
   // Re-create a fresh overlay for Enter/s actions
   const overlay2 = createCouncilOverlay(overlayVerdict);
@@ -1092,14 +1056,14 @@ export async function runCouncilSuite(ctx: TestContext): Promise<void> {
   if (overlay5Dynamic.getState().activeTab !== "persona-4") {
     fail(`COUNCIL-9: key '6' on 5-opinion verdict should select persona-4, got: ${overlay5Dynamic.getState().activeTab}`);
   }
-  const lines5Dynamic = overlay5Dynamic.renderLines(84, 26);
+  const lines5Dynamic = overlay5Dynamic.render(84, 26);
   if (!lines5Dynamic.some((l) => l.includes("Persona Five") && (l.includes("Stance of Persona Five") || l.includes("Invariant of Persona Five")))) {
     fail("COUNCIL-9: 5-opinion overlay must render fifth persona content when on persona-4 tab");
   }
 
   // (b) a 2-opinion verdict renders no third persona tab
   const overlay2Dynamic = createCouncilOverlay(duoDynamicVerdict);
-  const lines2Dynamic = overlay2Dynamic.renderLines(84, 26);
+  const lines2Dynamic = overlay2Dynamic.render(84, 26);
   if (lines2Dynamic.some((l) => l.includes("Persona C") || l.includes("[4] Persona") || l.includes("persona-2"))) {
     fail("COUNCIL-9: 2-opinion overlay must not render phantom third persona tab");
   }

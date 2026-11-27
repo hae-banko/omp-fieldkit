@@ -10,10 +10,9 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { sessionIdOf, type CommandContext, type ExtensionApi } from "../core/api.ts";
+import { sessionIdOf, type CommandContext, type ExtensionApi, type RowsView } from "../core/api.ts";
 import { findRepoRoot } from "../core/workspace.ts";
 import { createTuiCard, type CardSpec, type SemanticCardIntent } from "../core/card.ts";
-import type { Component } from "@oh-my-pi/pi-tui";
 import {
   BORDER_COLORS,
   makeProgressBar,
@@ -662,9 +661,9 @@ export function tiltToCardSpec(payload: TiltCardPayload): CardSpec {
 }
 
 /**
- * Construct a native `@oh-my-pi/pi-tui` Box card representing the Tilt-O-Meter.
+ * Construct the transcript card for the Tilt-O-Meter.
  */
-export function createTiltCard(payload: TiltCardPayload, theme?: unknown): Component {
+export function createTiltCard(payload: TiltCardPayload, theme?: unknown): RowsView {
   const spec = tiltToCardSpec(payload);
   return createTuiCard(spec, theme);
 }
@@ -752,7 +751,7 @@ export function installTilt(pi: ExtensionApi): void {
         "source" in event &&
         (event.source === "extension" || event.source === "system")
       ) {
-        return { text, action: "continue" };
+        return;
       }
 
       if (text) {
@@ -763,7 +762,6 @@ export function installTilt(pi: ExtensionApi): void {
           // Never fail the input hook
         }
       }
-      return { text, action: "continue" };
     });
     // Release a disposed session's strike count (task subagents dispose on finish).
     pi.on("session_shutdown", (_event: unknown, rawCtx?: unknown) => {

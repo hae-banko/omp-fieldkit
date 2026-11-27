@@ -32,7 +32,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Container, Text } from "@oh-my-pi/pi-tui";
+import { wrap } from "@oh-my-pi/pi-tui/text/width";
 import { sessionIdOf, type ExtensionApi } from "../core/api.ts";
 /** A "substantial" pure-reasoning turn, in characters of thinking text. */
 const THINKING_MIN_CHARS = 400;
@@ -229,18 +229,22 @@ export function installHindsight(pi: ExtensionApi): void {
         ? String(message.content ?? "")
         : "";
     const on = content.trim().endsWith(" on");
-    const box = new Container();
-    box.addChild(new Text(`HINDSIGHT — ${on ? "ON" : "OFF"}`));
-    box.addChild(
-      new Text(
-        on
-          ? "  reflection pass runs after real-work turns"
-          : "  turns settle after the first pass",
-        0,
-        0,
-      ),
-    );
-    return box;
+    const title = `HINDSIGHT — ${on ? "ON" : "OFF"}`;
+    const body = on
+      ? "  reflection pass runs after real-work turns"
+      : "  turns settle after the first pass";
+    return {
+      render(width: number) {
+        if (width <= 0) return [];
+        const padding = width >= 3 ? " " : "";
+        return [
+          "",
+          ...wrap(title, width - padding.length * 2).map((row) => `${padding}${row}${padding}`),
+          "",
+          ...wrap(body, width),
+        ];
+      },
+    };
   });
 }
 

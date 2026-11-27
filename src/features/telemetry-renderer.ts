@@ -1,5 +1,5 @@
-import { Container, Text } from "@oh-my-pi/pi-tui";
-import type { ExtensionApi } from "../core/api.ts";
+import { wrap } from "@oh-my-pi/pi-tui/text/width";
+import type { ExtensionApi, RowsView } from "../core/api.ts";
 import { BORDER_COLORS, boxLine, extractPayload, makeBottomBorder, makeDivider, makeTopBorder } from "../research/research-format.ts";
 
 export interface AuditSubtopicSpec {
@@ -100,7 +100,7 @@ function parseContentArg(messagePayload: unknown): string | undefined {
 export function renderAuditCard(
   payload?: AuditCardPayload,
   _theme?: ThemeHelper,
-): Container {
+): RowsView {
   const p = (payload && typeof payload === "object" ? payload : {}) as unknown as Record<string, unknown>;
   const contentArg = parseContentArg(payload);
   const rawSlug = p.slug;
@@ -153,12 +153,7 @@ export function renderAuditCard(
 
   rawLines.push(makeBottomBorder(BORDER_COLORS.cyan));
 
-  const container = new Container();
-  rawLines.forEach((line) => {
-    container.addChild(new Text(line, 0, 0));
-  });
-
-  return container;
+  return { render: (width) => rawLines.flatMap((line) => wrap(line, width)) };
 }
 
 export function installAuditCardRenderer(pi: ExtensionApi): void {
@@ -173,7 +168,7 @@ export function installAuditCardRenderer(pi: ExtensionApi): void {
 export function renderTicketBreakdownCard(
   payload?: TicketBreakdownPayload,
   _theme?: ThemeHelper,
-): Container {
+): RowsView {
   const p = (payload && typeof payload === "object" ? payload : {}) as unknown as Record<string, unknown>;
   const contentArg = parseContentArg(payload);
   const rawFeature = p.feature;
@@ -244,12 +239,7 @@ export function renderTicketBreakdownCard(
   }
 
   rawLines.push(makeBottomBorder(BORDER_COLORS.blue));
-  const container = new Container();
-  rawLines.forEach((line) => {
-    container.addChild(new Text(line, 0, 0));
-  });
-
-  return container;
+  return { render: (width) => rawLines.flatMap((line) => wrap(line, width)) };
 }
 
 export function installTicketBreakdownRenderer(pi: ExtensionApi): void {
@@ -264,7 +254,7 @@ export function installTicketBreakdownRenderer(pi: ExtensionApi): void {
 export function renderTriageStatusCard(
   payload?: TriageStatusPayload,
   _theme?: ThemeHelper,
-): Container {
+): RowsView {
   const p = (payload && typeof payload === "object" ? payload : {}) as unknown as Record<string, unknown>;
   const backlog = p.backlog && typeof p.backlog === "object" ? (p.backlog as Record<string, unknown>) : {};
 
@@ -329,12 +319,7 @@ export function renderTriageStatusCard(
 
   rawLines.push(makeBottomBorder(BORDER_COLORS.green));
 
-  const container = new Container();
-  rawLines.forEach((line) => {
-    container.addChild(new Text(line, 0, 0));
-  });
-
-  return container;
+  return { render: (width) => rawLines.flatMap((line) => wrap(line, width)) };
 }
 
 export function installTriageStatusRenderer(pi: ExtensionApi): void {

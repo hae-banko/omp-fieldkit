@@ -18,10 +18,7 @@ import { derivePipelineStatus } from "../src/research/research-status.ts";
 import {
   type ResearchItemSpec,
 } from "../src/research/research-renderer.ts";
-import {
-  displayWidth,
-  stripAnsi,
-} from "../src/research/research-format.ts";
+import { displayWidth, stripAnsi, truncateToWidth } from "../src/research/research-format.ts";
 import {
   createInteractiveCommandContext,
   createTempFixture,
@@ -105,8 +102,8 @@ export async function runResearchSuite(ctx: TestContext): Promise<void> {
   }
   // Render check at 80x24 (includes CJK characters from topic)
   const frame80 = overlay.render(80, 24);
-  if (!frame80 || !frame80.children || frame80.children.length === 0) {
-    fail(`ResearchOverlay.render(80, 24) returned empty container`);
+  if (!frame80.length || frame80.some(row => typeof row !== "string")) {
+    fail("ResearchOverlay.render(80, 24) did not return string rows");
   }
 
   // Tab switching key tests
@@ -164,8 +161,8 @@ export async function runResearchSuite(ctx: TestContext): Promise<void> {
   }
 
   const emptyFrame = emptyOverlay.render(80, 24);
-  if (!emptyFrame || !emptyFrame.children || emptyFrame.children.length === 0) {
-    fail(`emptyOverlay.render(80, 24) returned empty container`);
+  if (!emptyFrame.length) {
+    fail("emptyOverlay.render(80, 24) returned no rows");
   }
 
   const emptyDismiss = emptyOverlay.handleInput("\x1b");
@@ -176,21 +173,12 @@ export async function runResearchSuite(ctx: TestContext): Promise<void> {
 
   // 7. Larger-frame render (120x40) keeps box widths intact.
   const wideFrame = overlay.render(120, 40);
-  const wideChildren = wideFrame.children ?? [];
-  if (!wideFrame || wideChildren.length === 0) {
-    fail(`ResearchOverlay.render(120, 40) returned empty container`);
+  if (!wideFrame.length || wideFrame.some(row => displayWidth(row) > 120)) {
+    fail("ResearchOverlay.render(120, 40) returned empty or over-wide rows");
   }
-  // Each non-empty child line must respect the 120-cell box budget (≤ 118
-  // cells between the two │ borders after ANSI/stripping).
-  for (const child of wideChildren) {
-    if (!child || typeof child !== "object" || !("text" in child)) continue;
-    const textValue = child.text;
-    const raw = typeof textValue === "string" ? textValue : "";
-    const stripped = stripAnsi(raw);
-    const w = displayWidth(stripped);
-    if (w > 118) {
-      fail(`overlay.render(120x40): child line exceeds 118-cell box: width=${w} line=${JSON.stringify(stripped.slice(0, 40))}`);
-    }
+  const compactFrame = overlay.render(40, 14);
+  if (!compactFrame.length || compactFrame.length > 14 || compactFrame.some(row => displayWidth(row) > 40)) {
+    fail("ResearchOverlay.render(40, 14) returned empty or oversized rows");
   }
 
   // 8. CJK / emoji display-width alignment. Topics with CJK characters must
@@ -208,17 +196,8 @@ export async function runResearchSuite(ctx: TestContext): Promise<void> {
     fail(`cjkOverlay: expected initial tab 'overview'`);
   }
   const cjkFrame = cjkOverlay.render(80, 24);
-  const cjkChildren = cjkFrame.children ?? [];
-  for (const child of cjkChildren) {
-    if (!child || typeof child !== "object" || !("text" in child)) continue;
-    const textValue = child.text;
-    const raw = typeof textValue === "string" ? textValue : "";
-    const stripped = stripAnsi(raw);
-    const w = displayWidth(stripped);
-    // 80-column overlay → ≤ 78 cells between borders (inner = width - 2).
-    if (w > 78) {
-      fail(`CJK overlay render: child exceeds 78-cell box: width=${w} line=${JSON.stringify(stripped.slice(0, 40))}`);
-    }
+  if (!cjkFrame.length || cjkFrame.some(row => displayWidth(row) > 80)) {
+    fail("CJK overlay returned empty or over-wide rows");
   }
   // `displayWidth` itself must treat a CJK string as 2 cells per ideograph (4 chars = 8 cells).
   if (displayWidth("深度学习") !== 8) {
@@ -228,18 +207,14 @@ export async function runResearchSuite(ctx: TestContext): Promise<void> {
   if (displayWidth("📊") !== 2) {
     fail(`displayWidth('📊') expected 2, got ${displayWidth("📊")}`);
   }
-
-  // Verify renderLines returns actual string array for pi-tui overlay compositor
-  const overlayLines = cjkOverlay.renderLines(80, 24);
-  if (!Array.isArray(overlayLines) || overlayLines.length === 0) {
-    fail(`renderLines(80, 24): expected non-empty string array, got ${typeof overlayLines}`);
-  }
-  for (let i = 0; i < overlayLines.length; i++) {
-    if (typeof overlayLines[i] !== "string") {
-      fail(`renderLines row ${i} is not a string`);
+  for (const width of [0, 1, 2, 3]) {
+    if (displayWidth(truncateToWidth("📊 text", width)) > width) {
+      fail(`truncateToWidth exceeded ${width} cells`);
     }
   }
-
+  if (stripAnsi(truncateToWidth("📊 text", 5)) !== "📊...") {
+    fail("truncateToWidth split a surrogate pair");
+  }
 
   // --- State-Machine Audit Regression Tests ---
 
@@ -555,29 +530,24 @@ export async function runResearchSuite(ctx: TestContext): Promise<void> {
     fail(`X-RESEARCH-11: expected REPORT_READY when hasReport=true with explicit=OUTLINE, got ${x11Status3}`);
   }
 
-  // X-COREDISPATCH-14: Review overlay handleInput wrapper returns action
+  // The review shortcut must resolve the host overlay with the selected command.
   const x14Fixture = createTempFixture("x14-review-");
   const x14Kb = join(x14Fixture.dir, ".omp", "knowledge", "research");
   mkdirSync(join(x14Kb, "2026-08-01_x14"), { recursive: true });
   writeFileSync(join(x14Kb, "2026-08-01_x14", "outline.yaml"), "topic: X14\nitems: [{name: i1}]");
-  const x14Ctx = createInteractiveCommandContext();
-  if (ctx.registered?.["research"]) {
-    await ctx.registered["research"].handler("review 2026-08-01_x14", x14Ctx);
-    if (x14Ctx.customCalls.length > 0) {
-      const call = x14Ctx.customCalls[0];
-      const act = call.component.handleInput?.("d");
-      const isRunAction =
-        Boolean(act) &&
-        typeof act === "object" &&
-        act !== null &&
-        "action" in act &&
-        act.action === "run";
-      if (!isRunAction) {
-        fail(`X-COREDISPATCH-14: review overlay handleInput returned ${JSON.stringify(act)}, expected action object with action="run"`);
-      }
+  const x14Ctx = createInteractiveCommandContext((call) => call.component.handleInput?.("d"));
+  const previousCwd = process.cwd();
+  try {
+    process.chdir(x14Fixture.dir);
+    await ctx.registered["research"]?.handler("review 2026-08-01_x14", x14Ctx);
+    const result = x14Ctx.customCalls[0]?.result as { action?: string; command?: string } | undefined;
+    if (result?.action !== "run" || result.command !== "/research-deep 2026-08-01_x14") {
+      fail(`Review shortcut did not resolve to the selected research command: ${JSON.stringify(result)}`);
     }
+  } finally {
+    process.chdir(previousCwd);
+    x14Fixture.cleanup();
   }
-  x14Fixture.cleanup();
   cjkFixture.cleanup();
   fixture.cleanup();
 }

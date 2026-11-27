@@ -12,7 +12,7 @@ import {
   TILT_DICTIONARY,
   TILT_STRATA,
 } from "../src/features/tilt.ts";
-import type { ExtensionApi } from "../src/core/api.ts";
+import type { ExtensionApi, RowsView } from "../src/core/api.ts";
 import {
   createTimelineCard,
   parseTimelineLimit,
@@ -44,7 +44,7 @@ export async function runFeaturesSuite(ctx: TestContext): Promise<void> {
   if (parseTimelineLimit("5") !== 5) fail("timeline: parseTimelineLimit('5') should be 5");
   if (parseTimelineLimit("invalid") !== 15) fail("timeline: parseTimelineLimit('invalid') should fallback to 15");
 
-  // 1b. Native Timeline Card rendering
+  // 1b. Timeline card rendering
   const sampleTimelineContent = [
     "TIMELINE DIGEST — test-project (2 events)",
     "2026-08-26 · [git] feat: unified card architecture",
@@ -53,7 +53,7 @@ export async function runFeaturesSuite(ctx: TestContext): Promise<void> {
   const timelineBox = createTimelineCard(sampleTimelineContent);
   const timelineRows = timelineBox.render(100);
   if (!timelineRows[0].includes("╭") || !timelineRows[timelineRows.length - 1].includes("╰")) {
-    fail("createTimelineCard: missing native rounded corners");
+    fail("createTimelineCard: missing rounded corners");
   }
   if (!timelineRows.some((r) => r.includes("TIMELINE DIGEST"))) {
     fail("createTimelineCard: missing header title");
@@ -119,7 +119,7 @@ export async function runFeaturesSuite(ctx: TestContext): Promise<void> {
   const tiltBox = createTiltCard(sampleTiltPayload);
   const tiltRows = tiltBox.render(100);
   if (!tiltRows[0].includes("╭") || !tiltRows[tiltRows.length - 1].includes("╰")) {
-    fail("createTiltCard: missing native rounded corners");
+    fail("createTiltCard: missing rounded corners");
   }
   if (!tiltRows.some((r) => r.includes("TILT-O-METER"))) {
     fail("createTiltCard: missing header title");
@@ -155,14 +155,22 @@ export async function runFeaturesSuite(ctx: TestContext): Promise<void> {
   // SF-2 / D18: Session isolation for hindsight nudges across sessions
   setHindsightEnabled(true);
   type StopHandler = (event: unknown, rawCtx?: unknown) => { continue?: boolean; additionalContext?: string } | undefined;
-  const hindsightHandlers: { stop?: StopHandler } = {};
+  const hindsightHandlers: { stop?: StopHandler; render?: (message: unknown) => RowsView } = {};
   const mockPiHindsight = {
     on: (event: string, handler: unknown) => {
       if (event === "session_stop") hindsightHandlers.stop = handler as StopHandler;
     },
-    registerMessageRenderer: () => {},
+    registerMessageRenderer: (_type: string, render: (message: unknown) => RowsView) => {
+      hindsightHandlers.render = render;
+    },
   } as unknown as ExtensionApi;
   installHindsight(mockPiHindsight);
+  const receiptRows = hindsightHandlers.render?.({ content: "Hindsight on" }).render(20) ?? [];
+  if (!receiptRows.some((row) => row.includes("HINDSIGHT — ON"))
+    || !receiptRows.slice(3).some((row) => row.includes("turns"))
+    || receiptRows.some((row) => row.length > 20)) {
+    fail("hindsight: receipt should retain its title and wrap its explanation");
+  }
 
   const turn1Session1 = {
     stop_hook_active: false,
@@ -245,6 +253,7 @@ export async function runFeaturesSuite(ctx: TestContext): Promise<void> {
   type EventHandler = (event: unknown, ctx?: unknown) => unknown;
   const clarifyHandlers: { input?: EventHandler; beforeStart?: EventHandler } = {};
   const mockPiClarify = {
+    zod: ctx.pi.zod,
     on: (event: string, handler: unknown) => {
       if (event === "input") clarifyHandlers.input = handler as EventHandler;
       if (event === "before_agent_start") clarifyHandlers.beforeStart = handler as EventHandler;
@@ -270,7 +279,11 @@ export async function runFeaturesSuite(ctx: TestContext): Promise<void> {
   }
 
   // Bypassed prompt consumes bypass for that exact prompt text
-  clarifyHandlers.input?.({ text: "~skip clarify for this" });
+  const bypassInput = { type: "input", source: "interactive", text: "~skip clarify for this" };
+  const bypassResult = clarifyHandlers.input?.(bypassInput) as { text?: string } | undefined;
+  if (bypassResult?.text !== "skip clarify for this" || bypassInput.text !== "~skip clarify for this") {
+    fail("clarify: input hook should return rewritten text without mutating the event");
+  }
   if (promptAfterClarify("skip clarify for this").includes("Prompt Clarification Active")) {
     fail("clarify: ~ prefixed prompt was not bypassed");
   }

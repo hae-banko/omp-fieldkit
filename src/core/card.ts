@@ -1,11 +1,7 @@
-// Unified Native TUI Card Engine (SPEC-003 / ADR-0007).
-//
-// Bridges custom message renderers across omp-fieldkit onto Oh My Pi's native
-// `@oh-my-pi/pi-tui` Box architecture, with dynamic theme-aware background
-// tinting, semantic intent tokens, and responsive full-width viewports.
-
-import { Box, type BoxBorder, type Component, Container, Text } from "@oh-my-pi/pi-tui";
-import { displayWidth } from "../research/research-format.ts";
+// Width-aware, theme-tinted cards for Oh My Pi's rows renderer.
+import { wrap } from "@oh-my-pi/pi-tui/text/width";
+import type { RowsView } from "./api.ts";
+import { displayWidth, truncateToWidth } from "../research/research-format.ts";
 
 export type SemanticCardIntent =
   | "neutral"
@@ -22,7 +18,7 @@ export interface CardBadge {
 
 export interface CardSection {
   title?: string;
-  content: string[] | Component;
+  content: string[] | RowsView;
   divider?: boolean;
 }
 
@@ -120,22 +116,23 @@ export function normalizeTheme(theme: unknown): ThemeHelper {
 /**
  * A responsive horizontal divider line component that dynamically scales to viewport width.
  */
-export class ResponsiveDividerLine implements Component {
+export class ResponsiveDividerLine implements RowsView {
   constructor(
     public title: string | undefined,
     public colorFn: (text: string) => string,
   ) {}
 
-  render(width: number): readonly string[] {
+  render(width: number): string[] {
     const safeWidth = Math.max(0, width);
     if (!this.title) {
       return [this.colorFn("─".repeat(safeWidth))];
     }
     const label = ` ${this.title} `;
-    if (label.length >= safeWidth) {
-      return [label.slice(0, safeWidth)];
+    const labelWidth = displayWidth(label);
+    if (labelWidth >= safeWidth) {
+      return [truncateToWidth(label, safeWidth)];
     }
-    const remaining = safeWidth - label.length;
+    const remaining = safeWidth - labelWidth;
     const leftLen = Math.min(3, Math.floor(remaining / 2));
     const rightLen = remaining - leftLen;
     return [
@@ -148,14 +145,14 @@ export class ResponsiveDividerLine implements Component {
 /**
  * Component that formats badges atomically into lines based on available width.
  */
-export class BadgesComponent implements Component {
+class BadgesComponent implements RowsView {
   constructor(
     public badges: Array<{ label: string; value: string; intent?: SemanticCardIntent }>,
     public theme: ThemeHelper,
     public defaultTokens: ResolvedIntentTokens,
   ) {}
 
-  render(width: number): readonly string[] {
+  render(width: number): string[] {
     const formattedBadges = this.badges.map((b) => {
       const badgeTokens = b.intent ? resolveIntentTokens(b.intent) : this.defaultTokens;
       const lbl = this.theme.fg("dim", b.label.toUpperCase());
@@ -191,13 +188,13 @@ export class BadgesComponent implements Component {
 /**
  * Component that formats footer action hints atomically into lines.
  */
-export class FooterActionsComponent implements Component {
+class FooterActionsComponent implements RowsView {
   constructor(
     public actions: string[],
     public theme: ThemeHelper,
   ) {}
 
-  render(width: number): readonly string[] {
+  render(width: number): string[] {
     const formattedHints = this.actions.map((act) => this.theme.fg("dim", `⟨${act}⟩`));
     const lines: string[] = [];
     let currentLine: string[] = [];
@@ -227,119 +224,80 @@ export class FooterActionsComponent implements Component {
 /**
  * Component that formats content lines with hanging indents for bullets.
  */
-export class ContentLinesComponent implements Component {
+class ContentLinesComponent implements RowsView {
   constructor(public lines: string[]) {}
 
-  render(width: number): readonly string[] {
+  render(width: number): string[] {
     const out: string[] = [];
-    const safeWidth = Math.max(10, width);
+    if (width <= 0) return out;
 
-    for (const rawLine of this.lines) {
-      if (displayWidth(rawLine) <= safeWidth) {
-        out.push(rawLine);
-        continue;
-      }
-
-      const match = rawLine.match(/^(\s*(?:•|-|\*|⚡)\s+)(.*)$/);
-      if (match) {
-        const prefix = match[1];
-        const indent = " ".repeat(displayWidth(prefix));
-        const words = match[2].split(" ");
-        let current = prefix;
-        for (const word of words) {
-          if (displayWidth(current) + 1 + displayWidth(word) <= safeWidth) {
-            current += (current === prefix ? "" : " ") + word;
-          } else {
-            out.push(current);
-            current = indent + word;
-          }
+    for (const line of this.lines) {
+      const bullet = line.match(/^(\s*(?:•|-|\*|⚡)\s+)(.*)$/);
+      const indent = bullet ? displayWidth(bullet[1]) : 0;
+      if (bullet && indent < width) {
+        const body = wrap(bullet[2], width - indent);
+        for (const [i, row] of body.entries()) {
+          out.push((i === 0 ? bullet[1] : " ".repeat(indent)) + row);
         }
-        if (current.length > 0) out.push(current);
       } else {
-        const words = rawLine.split(" ");
-        let current = "";
-        for (const word of words) {
-          if (displayWidth(current) + 1 + displayWidth(word) <= safeWidth) {
-            current += (current ? " " : "") + word;
-          } else {
-            if (current) out.push(current);
-            current = word;
-          }
-        }
-        if (current) out.push(current);
+        out.push(...wrap(line, width));
       }
     }
     return out;
   }
 }
 
-/**
- * Construct a native `@oh-my-pi/pi-tui` Box card from a CardSpec.
- */
-export function createTuiCard(spec: CardSpec, themeInput?: unknown): Component {
+export function createTuiCard(spec: CardSpec, themeInput?: unknown): RowsView {
   const theme = normalizeTheme(themeInput);
   const tokens = resolveIntentTokens(spec.intent);
+  const paintBorder = (text: string) => theme.fg(tokens.borderToken, text);
+  const title = `\x1b[1m${theme.fg(tokens.accentToken, spec.title)}\x1b[0m`;
+  const parts: RowsView[] = [
+    new ContentLinesComponent(spec.subtitle ? [title, theme.fg("dim", spec.subtitle)] : [title]),
+  ];
+  const hasBadges = Boolean(spec.badges?.length);
+  if (spec.badges?.length) parts.push(new BadgesComponent(spec.badges, theme, tokens));
 
-  const border: BoxBorder = {
-    chars: ROUNDED_BORDER_CHARS,
-    color: (t: string) => theme.fg(tokens.borderToken, t),
-  };
-
-  const bgFn = (t: string) => theme.bg(tokens.bgToken, t);
-  const cardBox = new Box(1, 0, bgFn, border);
-
-  // 1. Header (Title + Subtitle)
-  const headerContainer = new Container();
-  const styledTitle = `\x1b[1m${theme.fg(tokens.accentToken, spec.title)}\x1b[0m`;
-  headerContainer.addChild(new Text(styledTitle, 0, 0));
-  if (spec.subtitle) {
-    const styledSub = theme.fg("dim", spec.subtitle);
-    headerContainer.addChild(new Text(styledSub, 0, 0));
-  }
-  cardBox.addChild(headerContainer);
-
-  // 2. Badges (if present)
-  if (spec.badges && spec.badges.length > 0) {
-    cardBox.addChild(new BadgesComponent(spec.badges, theme, tokens));
-  }
-
-  // 3. Sections
   let lastWasDivider = false;
-  for (let i = 0; i < spec.sections.length; i++) {
-    const sec = spec.sections[i];
-
-    if (sec.divider || i > 0 || (spec.badges && spec.badges.length > 0)) {
+  for (const [i, section] of spec.sections.entries()) {
+    if (section.divider || i > 0 || hasBadges) {
       if (!lastWasDivider) {
-        cardBox.addChild(
-          new ResponsiveDividerLine(sec.title, (t) => theme.fg(tokens.borderToken, t)),
-        );
+        parts.push(new ResponsiveDividerLine(section.title, paintBorder));
         lastWasDivider = true;
       }
-    } else if (sec.title) {
-      cardBox.addChild(
-        new Text(`\x1b[1m${theme.fg("accent", sec.title)}\x1b[0m`, 0, 0),
-      );
+    } else if (section.title) {
+      parts.push(new ContentLinesComponent([`\x1b[1m${theme.fg("accent", section.title)}\x1b[0m`]));
       lastWasDivider = false;
     }
 
-    if (Array.isArray(sec.content)) {
-      if (sec.content.length > 0) {
-        cardBox.addChild(new ContentLinesComponent(sec.content));
-        lastWasDivider = false;
+    if (!Array.isArray(section.content) || section.content.length > 0) {
+      parts.push(Array.isArray(section.content) ? new ContentLinesComponent(section.content) : section.content);
+      lastWasDivider = false;
+    }
+  }
+  if (spec.footerActions?.length) {
+    parts.push(new ResponsiveDividerLine(undefined, (text) => theme.fg("borderMuted", text)));
+    parts.push(new FooterActionsComponent(spec.footerActions, theme));
+  }
+
+  return {
+    render(width) {
+      if (width < 5) return width > 0 ? [truncateToWidth(spec.title, width)] : [];
+      const innerWidth = width - 2;
+      const contentWidth = innerWidth - 2;
+      const border = ROUNDED_BORDER_CHARS;
+      const rule = border.horizontal.repeat(innerWidth);
+      const side = paintBorder(border.vertical);
+      const lines = [paintBorder(border.topLeft + rule + border.topRight)];
+      for (const part of parts) {
+        for (const row of part.render(contentWidth)) {
+          const text = truncateToWidth(row, contentWidth);
+          const padding = " ".repeat(Math.max(0, innerWidth - 1 - displayWidth(text)));
+          lines.push(side + theme.bg(tokens.bgToken, ` ${text}${padding}`) + side);
+        }
       }
-    } else {
-      cardBox.addChild(sec.content);
-      lastWasDivider = false;
-    }
-  }
-
-  // 4. Footer actions (if present)
-  if (spec.footerActions && spec.footerActions.length > 0) {
-    cardBox.addChild(
-      new ResponsiveDividerLine(undefined, (t) => theme.fg("borderMuted", t)),
-    );
-    cardBox.addChild(new FooterActionsComponent(spec.footerActions, theme));
-  }
-
-  return cardBox;
+      lines.push(paintBorder(border.bottomLeft + rule + border.bottomRight));
+      return lines;
+    },
+  };
 }

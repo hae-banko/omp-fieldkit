@@ -441,12 +441,10 @@ export async function runCommandsSuite(ctx: TestContext): Promise<void> {
     }
   }
 
-  // 10. Automated Interactive TUI Command Verification (Prevents "Mock Gap" Regressions)
-  // Ensures commands running inside interactive TUI (with ctx.ui.custom) return valid
-  // components whose render(width) returns readonly string[], not a Container or raw object.
+  // Exercise overlay painting and dismissal through the host's done callback.
   const researchCmd = registered["research"];
   if (researchCmd) {
-    const interactiveCtx = createInteractiveCommandContext();
+    const interactiveCtx = createInteractiveCommandContext((call) => call.component.handleInput?.("q"));
     await researchCmd.handler("dashboard", interactiveCtx);
     if (interactiveCtx.customCalls.length === 0) {
       fail("/research dashboard: expected ctx.ui.custom to be invoked in interactive mode");
@@ -456,23 +454,15 @@ export async function runCommandsSuite(ctx: TestContext): Promise<void> {
       if (!lines80 || lines80.length === 0) {
         fail("/research dashboard: rendered 0 lines in interactive overlay");
       }
-      if (call.component.handleInput) {
-        const dismissAct = call.component.handleInput("q");
-        if (
-          !dismissAct ||
-          typeof dismissAct !== "object" ||
-          !("action" in dismissAct) ||
-          (dismissAct as Record<string, unknown>).action !== "dismiss"
-        ) {
-          fail("/research dashboard: 'q' key did not return dismiss action");
-        }
+      if ((call.result as { action?: string } | undefined)?.action !== "dismiss") {
+        fail("/research dashboard: 'q' did not dismiss the overlay through done()");
       }
     }
   }
 
   const councilCmd = registered["council"];
   if (councilCmd) {
-    const interactiveCtx = createInteractiveCommandContext();
+    const interactiveCtx = createInteractiveCommandContext((call) => call.component.handleInput?.("q"));
     await councilCmd.handler("--overlay test topic", interactiveCtx);
     if (interactiveCtx.customCalls.length === 0) {
       fail("/council: expected ctx.ui.custom to be invoked in interactive mode");
@@ -482,16 +472,8 @@ export async function runCommandsSuite(ctx: TestContext): Promise<void> {
       if (!lines80 || lines80.length === 0) {
         fail("/council: rendered 0 lines in interactive verdict overlay");
       }
-      if (call.component.handleInput) {
-        const dismissAct = call.component.handleInput("q");
-        if (
-          !dismissAct ||
-          typeof dismissAct !== "object" ||
-          !("action" in dismissAct) ||
-          (dismissAct as Record<string, unknown>).action !== "dismiss"
-        ) {
-          fail("/council: 'q' key did not return dismiss action");
-        }
+      if ((call.result as { action?: string } | undefined)?.action !== "dismiss") {
+        fail("/council: 'q' did not dismiss the overlay through done()");
       }
     }
   }

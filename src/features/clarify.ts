@@ -4,8 +4,7 @@
 // interactive TUI selection + custom text input, ~ single-turn bypass prefix,
 // and system prompt guideline injection when active.
 
-import { Type } from "@sinclair/typebox";
-import { Container, Text } from "@earendil-works/pi-tui";
+import { wrap } from "@oh-my-pi/pi-tui/text/width";
 import {
   asBeforeAgentStartEvent,
   asEventContext,
@@ -102,6 +101,7 @@ export function toggleClarifyState(args?: string, ctx?: CommandContext): boolean
 }
 
 export function installClarify(pi: ExtensionApi): void {
+  const { zod } = pi;
 
   pi.registerMessageRenderer(CLARIFY_DEBUG_CUSTOM_TYPE, (message: unknown) => {
     let contentStr = "";
@@ -134,7 +134,7 @@ export function installClarify(pi: ExtensionApi): void {
       ((event as { source: unknown }).source === "extension" ||
         (event as { source: unknown }).source === "system")
     ) {
-      return { text, action: "continue" };
+      return;
     }
 
     if (shouldBypassClarify(text)) {
@@ -147,14 +147,8 @@ export function installClarify(pi: ExtensionApi): void {
           if (oldest !== undefined) pendingBypasses.delete(oldest);
         }
       }
-      if (event && typeof event === "object" && "text" in event) {
-        const inputEvent = event as { text: unknown };
-        if (typeof inputEvent.text === "string") inputEvent.text = trimmed;
-      }
-      return { text: trimmed, action: "transform" };
+      return { text: trimmed };
     }
-
-    return { text, action: "continue" };
   });
 
   pi.on("before_agent_start", (event: unknown, ctx?: unknown): BeforeAgentStartEventResult | undefined => {
@@ -210,9 +204,9 @@ export function installClarify(pi: ExtensionApi): void {
     label: "Clarify Prompt",
     description:
       "Ask the user a clarifying question with multiple choice options when the request is ambiguous or vague.",
-    parameters: Type.Object({
-      question: Type.String(),
-      options: Type.Array(Type.String(), { minItems: 1 }),
+    parameters: zod.object({
+      question: zod.string(),
+      options: zod.array(zod.string()).min(1),
     }),
     execute: async (_toolCallId, rawParams, signal, _onUpdate, ctx) => {
       if (signal?.aborted) {
@@ -310,7 +304,6 @@ export function installClarify(pi: ExtensionApi): void {
       };
     },
     renderCall: (args: Record<string, unknown>, _options?: unknown, theme?: unknown) => {
-      const container = new Container();
       const safeArgs = args && typeof args === "object" ? args : {};
       const q =
         typeof safeArgs.question === "string" && safeArgs.question.trim()
@@ -319,28 +312,18 @@ export function installClarify(pi: ExtensionApi): void {
       const rawOpts = Array.isArray(safeArgs.options) ? safeArgs.options : [];
 
       const t = theme as ThemeHelper | undefined;
-      if (t?.fg) {
-        const title = t.bold ? t.bold("CLARIFY") : "CLARIFY";
-        container.addChild(new Text(t.fg("toolTitle", title) + t.fg("muted", ` — ${q}`), 0, 0));
-        for (const item of rawOpts) {
-          const optStr = typeof item === "string" ? item : (item != null ? String(item) : "");
-          if (!optStr) continue;
-          const truncated = optStr.length > 80 ? optStr.slice(0, 77) + "..." : optStr;
-          container.addChild(new Text(t.fg("muted", `  • ${truncated}`), 0, 0));
-        }
-      } else {
-        container.addChild(new Text(`CLARIFY — ${q}`, 0, 0));
-        for (const item of rawOpts) {
-          const optStr = typeof item === "string" ? item : (item != null ? String(item) : "");
-          if (!optStr) continue;
-          const truncated = optStr.length > 80 ? optStr.slice(0, 77) + "..." : optStr;
-          container.addChild(new Text(`  • ${truncated}`, 0, 0));
-        }
+      const title = t?.bold ? t.bold("CLARIFY") : "CLARIFY";
+      const rows = [t?.fg ? t.fg("toolTitle", title) + t.fg("muted", ` — ${q}`) : `CLARIFY — ${q}`];
+      for (const item of rawOpts) {
+        const optStr = typeof item === "string" ? item : (item != null ? String(item) : "");
+        if (!optStr) continue;
+        const truncated = optStr.length > 80 ? optStr.slice(0, 77) + "..." : optStr;
+        const row = `  • ${truncated}`;
+        rows.push(t?.fg ? t.fg("muted", row) : row);
       }
-      return container;
+      return { render: (width: number) => rows.flatMap((row) => wrap(row, width)) };
     },
     renderResult: (result: ToolResult, _options?: unknown, theme?: unknown) => {
-      const container = new Container();
       const content =
         result && typeof result === "object" && Array.isArray((result as ToolResult).content)
           ? (result as ToolResult).content
@@ -365,14 +348,10 @@ export function installClarify(pi: ExtensionApi): void {
       const isCancelled = details?.cancelled === true || text.includes("skipped");
 
       const t = theme as ThemeHelper | undefined;
-      if (t?.fg) {
-        const title = t.bold ? t.bold("CLARIFY ANSWER") : "CLARIFY ANSWER";
-        const colorTag = isCancelled ? "warning" : "success";
-        container.addChild(new Text(t.fg(colorTag, title) + t.fg("muted", ` — ${text}`), 0, 0));
-      } else {
-        container.addChild(new Text(`CLARIFY ANSWER — ${text}`, 0, 0));
-      }
-      return container;
+      const title = t?.bold ? t.bold("CLARIFY ANSWER") : "CLARIFY ANSWER";
+      const colorTag = isCancelled ? "warning" : "success";
+      const row = t?.fg ? t.fg(colorTag, title) + t.fg("muted", ` — ${text}`) : `CLARIFY ANSWER — ${text}`;
+      return { render: (width: number) => wrap(row, width) };
     },
   });
 }

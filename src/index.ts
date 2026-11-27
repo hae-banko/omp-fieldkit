@@ -467,20 +467,14 @@ const COMMANDS: CommandSpec[] = [
         if (ctx.hasUI && ctx.ui?.custom && !wantsCard) {
           const overlay = createResearchOverlay(root, cleanRest, "overview");
           const result = await ctx.ui.custom<ResearchOverlayAction | undefined>(
-            (_tui, _theme, _keybindings, done) => {
-              return {
-                render: (width = 80, height = 24) => overlay.renderLines(width, height),
-                handleInput: (data: string) => {
-                  const act = overlay.handleInput(data);
-                  if (act) done(act);
-                  return act;
-                },
-              };
-            },
-            {
-              overlay: true,
-              overlayOptions: { width: "85%", maxHeight: "75%", anchor: "center" },
-            },
+            (ui, _theme, _keybindings, done) => ({
+              render: width => overlay.render(width, ui.size().rows),
+              handleInput: data => {
+                const action = overlay.handleInput(data);
+                if (action) done(action);
+              },
+            }),
+            { overlay: true, fullscreen: true },
           );
           if (result && result.action === "run" && result.command) {
             await dispatchCommandLine(pi, result.command, ctx);
@@ -616,20 +610,14 @@ const COMMANDS: CommandSpec[] = [
         if (ctx.hasUI && ctx.ui?.custom && !wantsCard) {
           const overlay = createResearchOverlay(root, cleanRest, "items");
           const result = await ctx.ui.custom<ResearchOverlayAction | undefined>(
-            (_tui, _theme, _keybindings, done) => {
-              return {
-                render: (width = 80, height = 24) => overlay.renderLines(width, height),
-                handleInput: (data: string) => {
-                  const act = overlay.handleInput(data);
-                  if (act) done(act);
-                  return act;
-                },
-              };
-            },
-            {
-              overlay: true,
-              overlayOptions: { width: "85%", maxHeight: "75%", anchor: "center" },
-            },
+            (ui, _theme, _keybindings, done) => ({
+              render: width => overlay.render(width, ui.size().rows),
+              handleInput: data => {
+                const action = overlay.handleInput(data);
+                if (action) done(action);
+              },
+            }),
+            { overlay: true, fullscreen: true },
           );
           if (result && result.action === "run" && result.command) {
             await dispatchCommandLine(pi, result.command, ctx);

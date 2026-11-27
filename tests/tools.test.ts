@@ -282,6 +282,11 @@ export async function runToolsSuite(ctx: TestContext): Promise<void> {
       if (!text.includes("Execution error") && !text.includes("Routine failed") && !text.includes("exit code 2")) {
         fail(`D43: run_routine should include failure indicator in content text even with stdout, got: ${text}`);
       }
+      const rows = ctx.collectLines(routineTool.renderResult?.(failRes, { expanded: false }, undefined));
+      if (!rows.some((row) => row.includes("ROUTINE — Failing Routine (exit 2)"))
+        || !rows.some((row) => row.includes("Partial progress"))) {
+        fail("D43: run_routine result rows should retain the exit code and stdout");
+      }
     }
 
     fixture.cleanup();

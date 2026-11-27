@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.83.0] - 2026-11-27
+
+### Fixed
+
+- Load Fieldkit on Oh My Pi's reactive TUI host by replacing retired `pi-tui` components with width-aware rows and migrating the research and council overlays to the current custom UI API.
+
 ## [0.82.0] - 2026-11-07
 
 The package is renamed from `my-omp-skills` to `omp-fieldkit`: it is no longer only a skills collection. Behaviour is unchanged.

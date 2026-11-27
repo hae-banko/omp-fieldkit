@@ -9,11 +9,10 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { CommandContext, ExtensionApi } from "../core/api.ts";
+import type { CommandContext, ExtensionApi, RowsView } from "../core/api.ts";
 import { findKnowledgeRoot } from "../knowledge/knowledge.ts";
 import { listResearchProjects } from "../core/locators.ts";
 import { readProject } from "../research/research-store.ts";
-import type { Component } from "@oh-my-pi/pi-tui";
 import { createTuiCard, type CardSpec } from "../core/card.ts";
 export const DEFAULT_TIMELINE_LIMIT = 15;
 export const MAX_TIMELINE_LIMIT = 50;
@@ -256,9 +255,9 @@ export async function runTimelineCommand(
 }
 
 /**
- * Construct a native `@oh-my-pi/pi-tui` Box card representing the Timeline Digest.
+ * Construct the transcript card for the Timeline Digest.
  */
-export function createTimelineCard(content: string, theme?: unknown): Component {
+export function createTimelineCard(content: string, theme?: unknown): RowsView {
   const lines = content.split("\n");
   const title = lines[0] || "TIMELINE DIGEST";
   const body = lines.slice(1);

@@ -20,9 +20,9 @@
 // The TUI renders fixed-width strings through `renderCouncilVerdictCard` so
 // the verdict stays consistent with the chat-rendered verdict card.
 
-import { Container, Text } from "@oh-my-pi/pi-tui";
 import {
   BORDER_COLORS,
+  BOX_WIDTH,
   bold,
   boxLine,
   colorize,
@@ -50,8 +50,7 @@ export interface CouncilOverlayComponent {
   getState(): CouncilOverlayState;
   setVerdict(verdict: CouncilVerdict): void;
   invalidate(): void;
-  render(width: number, height: number): Container;
-  renderLines(width: number, height?: number): readonly string[];
+  render(width: number, height: number): string[];
   handleInput(key: string): CouncilOverlayAction | undefined;
 }
 
@@ -66,7 +65,7 @@ function defaultPersonaLabel(index: number): string {
 
 const DEFAULT_WIDTH = 84;
 const DEFAULT_HEIGHT = 26;
-const HEADER_HEIGHT = 6; // top border + title + topic + tabs + bottom header border + 1 spacer
+const HEADER_HEIGHT = 5; // top border + title + topic + tabs + divider
 const FOOTER_HEIGHT = 3; // top footer border + help line + bottom footer border
 
 /** Clamp `value` into [lo, hi]; finite-fallback to `lo`. */
@@ -74,12 +73,6 @@ function clampInt(value: number, lo: number, hi: number): number {
   if (!Number.isFinite(value)) return lo;
   if (hi < lo) return lo;
   return Math.max(lo, Math.min(hi, Math.round(value)));
-}
-
-function rowsToContainer(lines: string[]): Container {
-  const container = new Container();
-  for (const line of lines) container.addChild(new Text(line, 0, 0));
-  return container;
 }
 
 export class CouncilOverlay implements CouncilOverlayComponent {
@@ -220,7 +213,7 @@ export class CouncilOverlay implements CouncilOverlayComponent {
     borderColor: string,
     emptyMessage: string,
   ): string[] {
-    const usableHeight = Math.max(4, this.height - HEADER_HEIGHT - FOOTER_HEIGHT - 1);
+    const usableHeight = Math.max(0, this.height - HEADER_HEIGHT - FOOTER_HEIGHT - 3);
     const out: string[] = [makeTopBorder(borderColor)];
     out.push(boxLine(`  ${title}`, borderColor));
 
@@ -344,19 +337,14 @@ export class CouncilOverlay implements CouncilOverlayComponent {
     return this.renderVerdict();
   }
 
-  render(width: number, height: number): Container {
-    this.width = Math.max(48, width);
-    this.height = Math.max(14, height);
-    const lines: string[] = [];
-    lines.push(...this.headerLines());
+  render(width: number, height: number): string[] {
+    this.width = Math.max(1, Math.min(BOX_WIDTH, width));
+    this.height = Math.max(0, height);
+    const lines = this.headerLines();
     lines.push(...this.renderBody());
-    lines.push(...this.renderHelp());
-    if (lines.length > this.height) lines.length = this.height;
-    return rowsToContainer(lines);
-  }
-
-  renderLines(width: number, height?: number): readonly string[] {
-    return this.render(width, height ?? 26).render(width);
+    lines.length = Math.min(lines.length, Math.max(0, this.height - FOOTER_HEIGHT));
+    if (this.height > 0) lines.push(...this.renderHelp().slice(-this.height));
+    return width < BOX_WIDTH ? lines.map(line => truncateToWidth(line, width)) : lines;
   }
 
   private scrollActive(delta: number): void {

@@ -4,16 +4,10 @@
 //
 // All card lines are measured in terminal display cells, not code points:
 // CJK ideographs, Hangul, fullwidth forms and emoji occupy 2 cells, combining
-// marks 0. The previous UTF-16 slice()/padEnd() broke the fixed 76-column box
-// on wide glyphs and could exceed the pi-tui hard line-width limit (a
-// fail-fast crash). The width table is self-contained so the renderers stay
-// deterministic and testable without the runtime pi-tui.
+// marks 0. The width table is self-contained so row renderers stay
+// deterministic and testable without the host.
 
-// Width table + primitives + card scaffold. Container/Text come from pi-tui
-// (aliased to the headless stub in tests); the width math below needs no
-// runtime.
-
-import { Container, Text } from "@oh-my-pi/pi-tui";
+import type { RowsView } from "../core/api.ts";
 
 export const BOX_WIDTH = 76;
 export const INNER_WIDTH = BOX_WIDTH - 2;
@@ -122,16 +116,19 @@ const ELLIPSIS = "...";
 
 /** Truncate to `width` display cells, accounting for the ellipsis width (ANSI-aware). */
 export function truncateToWidth(text: string, width: number): string {
-  if (displayWidth(text) <= width) return text;
-  const budget = Math.max(0, width - displayWidth(ELLIPSIS));
+  const cells = Math.max(0, Math.trunc(width));
+  if (displayWidth(text) <= cells) return text;
+  if (cells <= ELLIPSIS.length) return ELLIPSIS.slice(0, cells);
+  const budget = cells - ELLIPSIS.length;
   let w = 0;
   let out = "";
   let inEscape = false;
   let escapeSeq = "";
 
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === "\x1b" && text[i + 1] === "[") {
+  for (let i = 0; i < text.length;) {
+    const ch = String.fromCodePoint(text.codePointAt(i)!);
+    i += ch.length;
+    if (ch === "\x1b" && text[i] === "[") {
       inEscape = true;
       escapeSeq = ch;
       continue;
@@ -225,27 +222,17 @@ export function extractPayload<T>(message: unknown): T | undefined {
 /**
  * Label-plus-lines tool-result card: the title as a bordered header row, then
  * each content line `  `-indented. Reproduces the card the tool renderers
- * previously hand-rolled, now inside the shared 76-cell box.
- */
-/**
- * Label-plus-lines tool-result card: the title as a bordered header row, then
- * each content line `  `-indented. Reproduces the card the tool renderers
  * previously hand-rolled, now inside the shared 76-cell box. Optional border color.
  */
-export function toolResultCard(lines: string[], title?: string, colorCode: string = BORDER_COLORS.dim): Container {
-  const container = new Container();
-  container.addChild(new Text(makeTopBorder(colorCode), 0, 0));
+export function toolResultCard(lines: string[], title?: string, colorCode: string = BORDER_COLORS.dim): RowsView {
+  const rows = [makeTopBorder(colorCode)];
   if (title) {
-    container.addChild(new Text(boxLine(` ${title}`, colorCode), 0, 0));
+    rows.push(boxLine(` ${title}`, colorCode));
+    if (lines.length > 0) rows.push(makeDivider(colorCode));
   }
-  if (title && lines.length > 0) {
-    container.addChild(new Text(makeDivider(colorCode), 0, 0));
-  }
-  for (const line of lines) {
-    container.addChild(new Text(boxLine(`  ${line}`, colorCode), 0, 0));
-  }
-  container.addChild(new Text(makeBottomBorder(colorCode), 0, 0));
-  return container;
+  for (const line of lines) rows.push(boxLine(`  ${line}`, colorCode));
+  rows.push(makeBottomBorder(colorCode));
+  return { render: () => rows };
 }
 
 export function clamp01(n: number): number {

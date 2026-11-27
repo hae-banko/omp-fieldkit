@@ -6,8 +6,7 @@
 // emitted transcript cards replay byte-identically and old payloads keep
 // rendering the current card.
 
-import { Container, Text } from "@oh-my-pi/pi-tui";
-import type { ExtensionApi } from "../core/api.ts";
+import type { ExtensionApi, RowsView } from "../core/api.ts";
 import {
   BORDER_COLORS,
   BOTTOM_BORDER,
@@ -248,14 +247,6 @@ function freshnessSuffix(freshness: unknown, asOf: unknown): string {
   return parts.length > 0 ? ` — ${parts.join(" · ")}` : "";
 }
 
-function buildContainer(rawLines: string[]): Container {
-  const container = new Container();
-  rawLines.forEach((line) => {
-    container.addChild(new Text(line, 0, 0));
-  });
-  return container;
-}
-
 /**
  * Header row that guarantees the trailing badge is never truncated: the slug
  * is middle-truncated to whatever width the badge leaves over.
@@ -272,7 +263,7 @@ function cardHeader(prefix: string, slug: string, plainBadge: string, renderedBa
 // Review window
 // ---------------------------------------------------------------------------
 
-export function renderResearchReviewCard(payload?: ResearchReviewPayload, themeRaw?: unknown): Container {
+export function renderResearchReviewCard(payload?: ResearchReviewPayload, themeRaw?: unknown): RowsView {
   const p = toRecord(payload);
   const slug = asString(p.slug) ?? "unknown";
   const status = asString(p.status) ?? "DRAFT REVIEW";
@@ -373,7 +364,7 @@ export function renderResearchReviewCard(payload?: ResearchReviewPayload, themeR
   rawLines.push(boxLine(`   /research review ${slug} --full  Re-open with all items`));
 
   rawLines.push(BOTTOM_BORDER);
-  return buildContainer(rawLines);
+  return { render: () => rawLines };
 }
 
 export function installResearchReviewCardRenderer(pi: ExtensionApi): void {
@@ -386,7 +377,7 @@ export function installResearchReviewCardRenderer(pi: ExtensionApi): void {
 // Wave progress
 // ---------------------------------------------------------------------------
 
-export function renderResearchWaveProgressCard(payload?: ResearchWaveProgressPayload, themeRaw?: unknown): Container {
+export function renderResearchWaveProgressCard(payload?: ResearchWaveProgressPayload, themeRaw?: unknown): RowsView {
   const p = toRecord(payload);
   const slug = asString(p.slug) ?? "unknown";
   const wave = asNumber(p.wave) ?? 1;
@@ -503,7 +494,7 @@ export function renderResearchWaveProgressCard(payload?: ResearchWaveProgressPay
   }
 
   rawLines.push(BOTTOM_BORDER);
-  return buildContainer(rawLines);
+  return { render: () => rawLines };
 }
 
 export function installResearchWaveProgressRenderer(pi: ExtensionApi): void {
@@ -516,7 +507,7 @@ export function installResearchWaveProgressRenderer(pi: ExtensionApi): void {
 // Report preview
 // ---------------------------------------------------------------------------
 
-export function renderResearchReportPreviewCard(payload?: ResearchReportPreviewPayload, themeRaw?: unknown): Container {
+export function renderResearchReportPreviewCard(payload?: ResearchReportPreviewPayload, themeRaw?: unknown): RowsView {
   const p = toRecord(payload);
   const slug = asString(p.slug) ?? "unknown";
   const theme = resolveResearchTheme(themeRaw);
@@ -621,7 +612,7 @@ export function renderResearchReportPreviewCard(payload?: ResearchReportPreviewP
   }
 
   rawLines.push(BOTTOM_BORDER);
-  return buildContainer(rawLines);
+  return { render: () => rawLines };
 }
 
 export function installResearchReportPreviewRenderer(pi: ExtensionApi): void {
@@ -638,7 +629,7 @@ export function renderResearchDashboardCard(
   payload?: ResearchDashboardPayload,
   themeRaw?: unknown,
   optionsRaw?: unknown,
-): Container {
+): RowsView {
   const p = toRecord(payload);
   const slug = asString(p.slug) ?? "unknown";
   const status = asString(p.status);
@@ -685,7 +676,7 @@ export function renderResearchDashboardCard(
     }
     rawLines.push(boxLine(` ${dim("⟨Ctrl+O: Expand details⟩")}`, borderColor));
     rawLines.push(makeBottomBorder(borderColor));
-    return buildContainer(rawLines);
+    return { render: () => rawLines };
   }
 
   // Full View: Detailed multi-section breakdown
@@ -842,7 +833,7 @@ export function renderResearchDashboardCard(
   }
 
   rawLines.push(makeBottomBorder(borderColor));
-  return buildContainer(rawLines);
+  return { render: () => rawLines };
 }
 
 export function installResearchDashboardRenderer(pi: ExtensionApi): void {
@@ -855,7 +846,7 @@ export function installResearchDashboardRenderer(pi: ExtensionApi): void {
 // Help overlay (new customType, namespaced per omp convention)
 // ---------------------------------------------------------------------------
 
-export function renderResearchHelpCard(payload?: ResearchHelpPayload, themeRaw?: unknown): Container {
+export function renderResearchHelpCard(payload?: ResearchHelpPayload, themeRaw?: unknown): RowsView {
   const p = toRecord(payload);
   const slug = asString(p.slug) ?? "research";
   const status = asString(p.status);
@@ -910,7 +901,7 @@ export function renderResearchHelpCard(payload?: ResearchHelpPayload, themeRaw?:
 
   rawLines.push(boxLine(" Press F1 or run '/research help' from any phase."));
   rawLines.push(BOTTOM_BORDER);
-  return buildContainer(rawLines);
+  return { render: () => rawLines };
 }
 
 export function installResearchHelpRenderer(pi: ExtensionApi): void {
@@ -923,7 +914,7 @@ export function installResearchHelpRenderer(pi: ExtensionApi): void {
 // Error card (new customType, namespaced per omp convention)
 // ---------------------------------------------------------------------------
 
-export function renderResearchErrorCard(payload?: ResearchErrorPayload, themeRaw?: unknown): Container {
+export function renderResearchErrorCard(payload?: ResearchErrorPayload, themeRaw?: unknown): RowsView {
   const p = toRecord(payload);
   const slug = asString(p.slug) ?? "research";
   const code = asString(p.code) ?? "ERROR";
@@ -943,7 +934,7 @@ export function renderResearchErrorCard(payload?: ResearchErrorPayload, themeRaw
     rawLines.push(boxLine(`   ${hint}`));
   }
   rawLines.push(BOTTOM_BORDER);
-  return buildContainer(rawLines);
+  return { render: () => rawLines };
 }
 
 export function installResearchErrorRenderer(pi: ExtensionApi): void {

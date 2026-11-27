@@ -3,24 +3,27 @@
 // superset, so these stay assignable both ways without depending on the
 // `@oh-my-pi/pi-coding-agent` type package.
 
-/** Minimal view of an interactive TUI overlay component that the
- * `ctx.ui.custom(...)` seam accepts. The runtime manages focus, sizing,
- * key routing, and lifecycle; this contract only requires render + input. */
-export interface CustomOverlayComponent<T = unknown> {
-  render(width?: number, height?: number): unknown;
-  handleInput?(data: string): void;
-  done?: (result: T) => void;
+/** ANSI rows accepted by the host's custom message and tool renderers. */
+export interface RowsView {
+  render(width: number): string[];
 }
 
-/** Factory shape the omp runtime invokes with its `tui`/`theme`/`keybindings`
- * helpers plus a `done(result)` callback the component uses to resolve. The
- * factory returns the overlay component (render/handleInput pair). */
-export type CustomOverlayFactory<T = unknown> = (
-  tui: unknown,
+export interface CustomOverlayComponent extends RowsView {
+  handleInput?(data: string): void;
+  dispose?(): void;
+}
+
+export interface CustomUiHost {
+  requestRender(): void;
+  size(): { readonly columns: number; readonly rows: number };
+}
+
+export type CustomOverlayFactory<T> = (
+  ui: CustomUiHost,
   theme: unknown,
   keybindings: unknown,
   done: (result: T) => void,
-) => CustomOverlayComponent<T> | { render: (width?: number, height?: number) => unknown; handleInput?: (data: string) => void };
+) => CustomOverlayComponent | Promise<CustomOverlayComponent>;
 
 export interface CommandContext {
   /** True when an interactive UI is available; false in --headless / CI modes. */
@@ -53,9 +56,9 @@ export interface CommandContext {
       factory: CustomOverlayFactory<T>,
       options?: {
         overlay?: boolean;
-        overlayOptions?: { width?: string; maxHeight?: string; anchor?: "center" | "top" | "bottom" };
+        fullscreen?: boolean;
       },
-    ): Promise<T | undefined>;
+    ): Promise<T>;
   };
  }
 
@@ -189,6 +192,7 @@ export interface ZodLike {
   object(shape: Record<string, unknown>): unknown;
   enum(values: readonly string[]): { default(value: string): unknown; optional(): unknown };
   string(): { optional(): unknown };
+  array(item: unknown): { min(n: number): unknown };
   record(keyType: unknown, valueType?: unknown): { optional(): unknown };
   number(): { int(): { min(n: number): { max(n: number): { optional(): unknown } } } };
   boolean(): { optional(): unknown };
